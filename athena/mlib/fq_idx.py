@@ -51,8 +51,10 @@ class FastqIndex(object):
         raise Exception("Only BGZF compression is supported")
 
       handle = bgzf.BgzfReader(self.fq_path)
+      self.gzipped = True
     else:
       handle = open(self.fq_path)
+      self.gzipped = False
 
     self.f_map[self.fq_path] = handle
     return self
@@ -79,10 +81,8 @@ class FastqIndex(object):
         raise Exception("Only BGZF compression is supported")
 
       handle = bgzf.BgzfReader(self.fq_path)
-      self.gzipped = True
     else:
       handle = open(self.fq_path)
-      self.gzipped = False
 
     seen_set = set()
     for bcode, reads_iter in groupby(
