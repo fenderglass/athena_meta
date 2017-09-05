@@ -164,7 +164,8 @@ class LocalAssembler(object):
       else:
         error_message = "assembly failed to produce contig.fa"
         self.logger.log(error_message)
-        raise Exception()
+        open(contig_path, "w")
+        #raise Exception()
     elif retcode != 0:
       self.logger.log(
         "something funky happened while running idba_ud (got error code "
