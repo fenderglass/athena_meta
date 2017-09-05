@@ -153,7 +153,11 @@ class AssembleMetaBinnedStep(StepChunk):
           key=lambda(c): fasta.get_reference_length(c),
           reverse=True,
         ):
-          seq = str(fasta.fetch(contig).upper())
+          try:
+            seq = str(fasta.fetch(contig).upper())
+          except ValueError as e:
+            self.logger.log('WARNING: {0}'.format(str(e)))
+            continue
           if len(seq) < 2000:
             break
           total_asm_contigs += 1
