@@ -147,6 +147,22 @@ def fastq_iter(f):
     yield bcode, qname, lines
   raise StopIteration
 
+def fastq_iter_pos(f):
+  file_pos = f.tell()
+  for lines in grouped(f, 4):
+    qname, info_map = _get_qname_info(lines[0])
+    qname = qname[1:]
+    assert not ('BC' in info_map and 'BX' in info_map), \
+      'fastq can only either BX or BC tag!'
+    bcode = None
+    if 'BX' in info_map:
+      bcode = info_map['BX']
+    elif 'BC' in info_map:
+      bcode = info_map['BC']
+    yield bcode, qname, file_pos, lines
+    file_pos = f.tell()
+  raise StopIteration
+
 def get_fasta_sizes(fa_path):
   fasta = pysam.FastaFile(fa_path)
   ctg_size_map = {}

@@ -3,6 +3,8 @@ import sys
 import cPickle as pickle
 from itertools import groupby
 
+from Bio import bgzf
+
 import util
 
 class FastqIndex(object):
@@ -42,7 +44,17 @@ class FastqIndex(object):
   def open(self):
     assert self.f_map == None, "fp map already populated"
     self.f_map = {}
-    self.f_map[self.fq_path] = open(self.fq_path)
+
+    if self.fq_path.endswith('.gz'):
+      index_name = self.fq_path + "i"
+      if not os.path.exists(index_name):
+        raise Exception("Only BGZF compression is supported")
+
+      handle = bgzf.BgzfReader(self.fq_path)
+    else:
+      handle = open(self.fq_path)
+
+    self.f_map[self.fq_path] = handle
     return self
 
   def close(self):
@@ -61,24 +73,31 @@ class FastqIndex(object):
     self._bcode_off_map = {}
     num_pe = 0
 
-    assert not self.fq_path.endswith('.gz'), \
-      "gzipped fq not supported"
-    with open(self.fq_path) as f:
-      seen_set = set()
-      for bcode, reads_iter in groupby(
-        util.fastq_iter(f),
-        lambda(x): x[0],
-      ):
-        assert bcode == None or bcode not in seen_set, \
+    if self.fq_path.endswith('.gz'):
+      index_name = self.fq_path + "i"
+      if not os.path.exists(index_name):
+        raise Exception("Only BGZF compression is supported")
+
+      handle = bgzf.BgzfReader(self.fq_path)
+      self.gzipped = True
+    else:
+      handle = open(self.fq_path)
+      self.gzipped = False
+
+    seen_set = set()
+    for bcode, reads_iter in groupby(
+      util.fastq_iter_pos(handle),
+      lambda(x): x[0],
+    ):
+      assert bcode == None or bcode not in seen_set, \
 "fastq {} NOT in barcode sorted order. Ensure reads that share barcodes \
 are in a block together".format(self.fq_path)
-        seen_set.add(bcode)
+      seen_set.add(bcode)
+      for _, qname, file_pos, lines in reads_iter:
         if bcode != None and bcode not in self._bcode_off_map:
-          self._bcode_off_map[bcode] = numbytes
-        for _, qname, lines in reads_iter:
-          num_pe += 1
-          txt = ''.join(lines)
-          numbytes += len(txt)
+          self._bcode_off_map[bcode] = file_pos
+        num_pe += 1
+    handle.close()
 
     num_bcodes = len(filter(
       lambda(b): b.endswith('-1'),
@@ -105,7 +124,10 @@ are in a block together".format(self.fq_path)
 
     offset = self._bcode_off_map[bcode]
     f = self.f_map[self.fq_path]
-    f.seek(offset, 0)
+    if not self.gzipped:
+      f.seek(offset, 0)
+    else:
+      f.seek(offset)
 
     for e in util.fastq_iter(f):
       _bcode = e[0]
