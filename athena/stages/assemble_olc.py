@@ -9,6 +9,7 @@ from ..mlib import util
 
 # NOTE must be in path
 canubin_path = 'canu'
+abruijn_path = 'abruijn'
 
 class AssembleOLCStep(StepChunk):
 
@@ -46,6 +47,79 @@ class AssembleOLCStep(StepChunk):
     return self.__class__.__name__
 
   def run(self):
+    #self.assemble_canu()
+    self.assemble_abruijn()
+
+  def assemble_abruijn(self):
+    self.logger.log('jointly assemble bins with ABruijn')
+
+    # collect input contig and local reasm contigs
+    self.logger.log('merge input contigs')
+
+    premergedfa_path = os.path.join(self.outdir, 'pre-abruijn-input-contigs.fa')
+    seedsfa_path = os.path.join(self.outdir, 'abruijn-seed-contigs.fa')
+    mergedfa_path = os.path.join(self.outdir, 'abruijn-input-contigs.fa')
+
+    # load all the bins
+    bins = util.load_pickle(self.options.bins_pickle_path)
+
+    input_paths = []
+    seed_ctgs = set()
+    for (binid, seed_group) in bins:
+      for ctg in seed_group:
+        seed_ctgs.add(ctg)
+      bindir_path = self.options.get_bin_dir(binid, final=True)
+      fa_path = os.path.join(bindir_path, 'local-asm-merged.fa')
+      if not os.path.isfile(fa_path):
+        self.logger.log(' not found, skipping {}'.format(fa_path))
+      elif not is_valid_fasta(fa_path):
+        self.logger.log('WARNING input fasta not valid: {}'.format(fa_path))
+      else:
+        input_paths.append(fa_path)
+
+    if not os.path.isfile(premergedfa_path):
+      util.concat_files(input_paths, premergedfa_path)
+    assert is_valid_fasta(premergedfa_path), "merge FASTA not valid"
+
+    # append input seed contigs
+    with open(seedsfa_path, 'w') as fout:
+      fasta = pysam.FastaFile(self.options.ctgfasta_path)
+      for ctg in seed_ctgs:  
+        seq = str(fasta.fetch(ctg).upper())
+        for i in xrange(1):
+          fout.write('>{}.{}\n'.format(ctg, i))
+          fout.write(str(seq) + '\n')
+
+    if not os.path.isfile(mergedfa_path):
+      util.concat_files(
+        [premergedfa_path, seedsfa_path],
+        mergedfa_path,
+      )
+    assert is_valid_fasta(mergedfa_path), "merge FASTA not valid"
+
+    asm_size = os.path.getsize(seedsfa_path)
+    reads_size = os.path.getsize(mergedfa_path)
+    coverage = int(reads_size / asm_size)
+    abruijn_path = os.path.join(self.outdir, 'abruijn-asm-1')
+    ABRUIJN_THREADS = 16
+    cmd = "abruijn {0} {1} {2} -t {3}".format(mergedfa_path, abruijn_path, coverage,
+                                              ABRUIJN_THREADS)
+    abruijn_contigs_path = os.path.join(abruijn_path, 'graph_final.fasta')
+    if not os.path.isfile(abruijn_contigs_path):
+      print 'launching OLC assembly'
+      print 'cmd', cmd
+      subprocess.check_call(cmd, shell=True)
+
+    final_fa_path = os.path.join(self.outdir, 'athena.asm.fa')
+    util.concat_files(
+      [abruijn_contigs_path],
+      final_fa_path,
+    )
+
+    self.logger.log('done')
+
+
+  def assemble_canu(self):
     self.logger.log('jointly assemble bins with OLC')
 
     # collect input contig and local reasm contigs
@@ -236,7 +310,7 @@ def filter_inputs(
       fout.write('{}\n'.format(seq))
 
 def is_valid_fasta(fa_path):
-  alpha = set('acgtACGT')
+  alpha = set('acgtnACGTN')
   with open(fa_path) as fin:
     for line in fin:
       if line.startswith('>'):
