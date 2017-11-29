@@ -1,5 +1,7 @@
-Athena
+Athena - unofficial fork
 --------
+
+NOTICE - this is an unofficial for of the Athena assembler, please refer to the original verion unless you are 100% sure what you are doing.
 
 Athena is a read cloud assembler for metagenomes.
 
